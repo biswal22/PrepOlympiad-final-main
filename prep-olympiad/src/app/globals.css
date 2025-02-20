@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f9fafb;
+  --foreground: #111827;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1f2937;
+    --foreground: #f9fafb;
+  }
+}
+
+body {
+  color: var(--foreground);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(to bottom, #647494, #e5e7eb); /* gray-100 to gray-200 gradient */
+}
+
+main {
+  flex-grow: 1;
+  background: transparent;
+}
+
+/* Add smooth transitions for interactive elements */
+a, button {
+  transition: all 0.2s ease-in-out;
+}

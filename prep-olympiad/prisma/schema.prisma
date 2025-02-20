@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  attempts  Attempt[]
+}
+
+model Question {
+  id            String   @id @default(cuid())
+  title         String
+  content       String   // Will contain LaTeX notation
+  choices       Json[]   // Changed to Json[] to handle both text and image choices
+  correctAnswer String
+  solution      String
+  difficulty    String
+  category      String
+  subject       String
+  images        Json[]
+  createdAt     DateTime @default(now())
+  attempts      Attempt[]
+}
+
+model Attempt {
+  id         String   @id @default(cuid())
+  userId     String
+  questionId String
+  isCorrect  Boolean
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+  question   Question @relation(fields: [questionId], references: [id])
+}
