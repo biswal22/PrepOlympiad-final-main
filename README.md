@@ -1,5 +1,5 @@
 # PrepOlympiad-final
-
+<--!
 # What the project is about:
 This project is a full stack web application that allows users to practice for the olympiad exams. On the backend, I will likely have an OpenAI API key to read and parse the open sourced olympiad questions and answers. This backend will be built with Flask as Python allows for easier syntax for the API. The frontend and part of the backend will be using Next.js and TailwindCSS and I am hoping to use the inbuilt REST API of Next.js to communicate with the Flask backend. I need to keep a database of the questions and answers and the users' progress, likely through PostgreSQL and Auth0 for authentication. 
 
@@ -8,5 +8,5 @@ Postgres will be used to store the questions and answers and user progress (stat
 
 # Questions:
 - Do I need to use Flask in this project since I am using Next.js?
-
+-->
 
