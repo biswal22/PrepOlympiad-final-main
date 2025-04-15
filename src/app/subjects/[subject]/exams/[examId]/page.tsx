@@ -11,15 +11,30 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/$
 // Mock data - replace with actual data from your backend
 const mockExamData = {
   'mathematics-1': {
-    pdfUrl: '/exams/math-2023.pdf',
-    totalQuestions: 30,
-    timeLimit: 120,
+    pdfUrl: '/exams/mathematics/AMC10/amc10a_b_2018.pdf',
+    totalQuestions: 25,
+    timeLimit: 75,
   },
   'physics-1': {
-    pdfUrl: '/exams/physics-2023.pdf',
+    pdfUrl: '/exams/physics/fma/2021_Fma_exam.pdf',
+    totalQuestions: 25,
+    timeLimit: 75,
+  },
+  'chemistry-1': {
+    pdfUrl: '/exams/chemistry/local/2022-usnco-local-exam.pdf',
+    totalQuestions: 60,
+    timeLimit: 110,
+  },
+  'biology-1': {
+    pdfUrl: '/exams/biology/open/USABO 18 Open Exam.Final wo ans.pdf',
+    totalQuestions: 50,
+    timeLimit: 90,
+  },
+  'earth-science-1': {
+    pdfUrl: '/exams/earth-science/open/2024_USESO_Open_Section-I_Test_Color.pdf',
     totalQuestions: 30,
     timeLimit: 120,
-  },
+  }
   // Add more mock data as needed
 };
 
