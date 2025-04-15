@@ -1,5 +1,10 @@
 import PracticeProblem from '@/components/PracticeProblem'
+import AuthCheck from '@/components/AuthCheck';
 
 export default function TestPage() {
-  return <PracticeProblem subject="mathematics" />
+  return (
+    <AuthCheck>
+      <PracticeProblem subject="mathematics" />
+    </AuthCheck>
+  );
 } 

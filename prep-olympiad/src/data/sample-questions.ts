@@ -1,5 +1,5 @@
 // Import the test output directly
-import sampleQuestions from '../../scripts/chemistry/test_output.json';
+import sampleQuestions from './problems/chemistry/test_output.json';
 
 export const getQuestions = () => {
   return sampleQuestions.all_questions.map(q => ({

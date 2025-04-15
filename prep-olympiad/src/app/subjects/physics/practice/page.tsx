@@ -1,5 +1,10 @@
 import PracticeProblem from '@/components/PracticeProblem';
+import AuthCheck from '@/components/AuthCheck';
 
 export default function PhysicsPractice() {
-  return <PracticeProblem subject="Physics" />;
+  return (
+    <AuthCheck>
+      <PracticeProblem subject="Physics" />
+    </AuthCheck>
+  );
 } 

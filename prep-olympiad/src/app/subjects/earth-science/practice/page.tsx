@@ -1,5 +1,10 @@
 import PracticeProblem from '@/components/PracticeProblem';
+import AuthCheck from '@/components/AuthCheck';
 
 export default function EarthSciencePractice() {
-  return <PracticeProblem subject="Earth Science" />;
+  return (
+    <AuthCheck>
+      <PracticeProblem subject="Earth Science" />
+    </AuthCheck>
+  );
 } 

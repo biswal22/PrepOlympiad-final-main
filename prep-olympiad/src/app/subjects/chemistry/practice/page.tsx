@@ -1,5 +1,10 @@
 import PracticeProblem from '@/components/PracticeProblem';
+import AuthCheck from '@/components/AuthCheck';
 
 export default function ChemistryPractice() {
-  return <PracticeProblem subject="Chemistry" />;
+  return (
+    <AuthCheck>
+      <PracticeProblem subject="Chemistry" />
+    </AuthCheck>
+  );
 } 
