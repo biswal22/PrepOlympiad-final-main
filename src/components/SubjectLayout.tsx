@@ -75,7 +75,7 @@ export default function SubjectLayout({ subject, description }: SubjectLayoutPro
     {
       title: "Take a Timed Exam",
       description: "Simulate real exam conditions with timed tests",
-      href: `/subjects/${subject.toLowerCase().replace(' ', '-')}/exam`,
+      href: `/subjects/${subject.toLowerCase().replace(' ', '-')}/exams`,
       icon: "⏱️",
       color: style.color.replace('text', 'border')
     },
@@ -152,7 +152,7 @@ export default function SubjectLayout({ subject, description }: SubjectLayoutPro
             
             {/* Quick tips */}
             <div className={`mt-8 rounded-xl ${style.bgLight} p-6 shadow-md`}>
-              <h3 className={`text-xl font-semibold mb-4 ${style.color}`}>Quick Tips</h3>
+              <h3 className={`text-xl font-semibold mb-4 text-gray-700`}>Quick Tips</h3>
               <ul className="space-y-4">
                 <li className="flex">
                   <span className="mr-3">💡</span>
@@ -187,7 +187,7 @@ export default function SubjectLayout({ subject, description }: SubjectLayoutPro
                       <span className="text-2xl">{feature.icon}</span>
                     </div>
                     <div className="ml-4">
-                      <h3 className={`text-xl font-semibold mb-2 ${style.color}`}>{feature.title}</h3>
+                      <h3 className={`text-xl font-semibold mb-2 text-gray-700`}>{feature.title}</h3>
                       <p className="text-gray-600">{feature.description}</p>
                     </div>
                   </div>

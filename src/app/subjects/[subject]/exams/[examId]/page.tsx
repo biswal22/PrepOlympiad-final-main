@@ -1,87 +1,162 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
+import dynamic from 'next/dynamic';
+import AuthCheck from '@/components/AuthCheck';
+import { ExamData, LinkItem, extractYear, generateExamId, processExamLinks } from '@/utils/examUtils'; // Import from utils
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'; // Use standard Auth Helpers client
 
-// Initialize PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-// Mock data - replace with actual data from your backend
-const mockExamData = {
-  'mathematics-1': {
-    pdfUrl: '/exams/mathematics/AMC10/amc10a_b_2018.pdf',
-    totalQuestions: 25,
-    timeLimit: 75,
-  },
-  'physics-1': {
-    pdfUrl: '/exams/physics/fma/2021_Fma_exam.pdf',
-    totalQuestions: 25,
-    timeLimit: 75,
-  },
-  'chemistry-1': {
-    pdfUrl: '/exams/chemistry/local/2022-usnco-local-exam.pdf',
-    totalQuestions: 60,
-    timeLimit: 110,
-  },
-  'biology-1': {
-    pdfUrl: '/exams/biology/open/USABO 18 Open Exam.Final wo ans.pdf',
-    totalQuestions: 50,
-    timeLimit: 90,
-  },
-  'earth-science-1': {
-    pdfUrl: '/exams/earth-science/open/2024_USESO_Open_Section-I_Test_Color.pdf',
-    totalQuestions: 30,
-    timeLimit: 120,
-  }
-  // Add more mock data as needed
-};
+// Dynamically import the PDF components to avoid SSR issues
+const PDFViewer = dynamic(
+  () => import('@/components/PDFViewer'),
+  { ssr: false }
+);
 
 export default function ExamPage() {
   const params = useParams();
   const router = useRouter();
+  const supabase = createClientComponentClient(); // Initialize standard client
   const subject = params.subject as string;
-  const examId = params.examId as string;
-  const examKey = `${subject}-${examId}`;
+  const examId = params.examId as string; // This ID comes from the URL
+  const examKey = `${subject}-${examId}`; // The key used to lookup in fetched data
   
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [timeLeft, setTimeLeft] = useState(mockExamData[examKey as keyof typeof mockExamData]?.timeLimit * 60 || 0);
+  const [allExamData, setAllExamData] = useState<{ [key: string]: ExamData } | null>(null);
+  const [currentExam, setCurrentExam] = useState<ExamData | null>(null);
+  const [answers, setAnswers] = useState<Record<number, string | number>>({});
+  const [numericInputValues, setNumericInputValues] = useState<Record<number, string>>({});
+  const [timeLeft, setTimeLeft] = useState(0);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [score, setScore] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false); // State for saving progress
 
+  // Define handleSubmit *before* the timer useEffect
+  const handleSubmit = useCallback(async (isAutoSubmit = false) => { 
+    if (isSubmitted || isLoading || !currentExam || isSaving) return; 
+    
+    if (!isAutoSubmit) {
+        const confirmed = window.confirm("Are you sure you want to submit your exam?");
+        if (!confirmed) return;
+    }
+
+    setIsSaving(true); 
+    setIsSubmitted(true);
+    setError(null); 
+    
+    let correctCount = 0;
+    if (currentExam.answers) {
+      for (let i = 1; i <= currentExam.totalQuestions; i++) {
+        if (answers[i] !== undefined && String(answers[i]) === String(currentExam.answers[i-1])) {
+          correctCount++;
+        }
+      }
+    }
+    const calculatedScore = currentExam.totalQuestions > 0 
+      ? Math.round((correctCount / currentExam.totalQuestions) * 100)
+      : 0;
+    setScore(calculatedScore);
+
+    // --- Save score to Supabase --- 
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error: upsertError } = await supabase
+          .from('user_progress')
+          .upsert({
+            user_id: user.id,
+            subject: subject, 
+            timed_exam_percentage: calculatedScore,
+            last_updated: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id,subject' 
+          });
+
+        if (upsertError) {
+          throw upsertError;
+        }
+        console.log('Exam score saved successfully!');
+      } else {
+          console.warn('User not logged in. Score not saved.');
+      }
+    } catch (error) {
+      console.error('Error saving exam score:', error);
+      setError('Failed to save your score. Please try again later.');
+    } finally {
+        setIsSaving(false); 
+    }
+  }, [isSubmitted, isLoading, currentExam, isSaving, answers, supabase, subject]);
+
+  // Fetch and process exam data on mount
   useEffect(() => {
-    if (timeLeft > 0 && !isSubmitted) {
-      const timer = setInterval(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      setError(null); // Reset error on new fetch
+      try {
+        const response = await fetch('/collected_links.json');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const links: LinkItem[] = await response.json();
+        const processedData = processExamLinks(links);
+        setAllExamData(processedData);
+
+        // *** Use the constructed examKey for lookup ***
+        if (processedData[examKey]) { 
+          setCurrentExam(processedData[examKey]);
+          setTimeLeft(processedData[examKey].timeLimit * 60);
+        } else {
+          console.error(`Exam key not found: ${examKey}. Available keys:`, Object.keys(processedData));
+          setError(`Exam data not found for key: ${examKey}. Please check the URL or exam list.`);
+        }
+      } catch (e) {
+        console.error("Failed to fetch or process exam data:", e);
+        setError(`Failed to load exam list. ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (examKey) { // Only fetch if examKey is valid
+      fetchData();
+    }
+  }, [examKey]); // Re-run if examKey changes
+
+  // Timer useEffect (no changes needed here)
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    if (!isLoading && timeLeft > 0 && !isSubmitted && currentExam) {
+      intervalId = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
-            handleSubmit();
+            if (intervalId) clearInterval(intervalId); // Clear interval before submitting
+            handleSubmit(true); // Pass flag to indicate auto-submit due to time
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
-      return () => clearInterval(timer);
     }
-  }, [timeLeft, isSubmitted]);
+    return () => { if (intervalId) clearInterval(intervalId); }; // Cleanup interval
+  }, [isLoading, timeLeft, isSubmitted, currentExam, handleSubmit]); // Added handleSubmit dependency
 
-  const handleAnswerSelect = (questionNumber: number, answer: string) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [questionNumber]: answer,
-    }));
+  // handleAnswerSelect, handleNumericInputChange, handleSubmit, formatTime (no changes needed)
+  const handleAnswerSelect = (questionNumber: number, answer: string | number) => {
+    if (isSubmitted) return; // Prevent changes after submission
+    setAnswers(prev => ({ ...prev, [questionNumber]: answer }));
   };
 
-  const handleSubmit = () => {
+  const handleNumericInputChange = (questionNumber: number, value: string) => {
     if (isSubmitted) return;
-    setIsSubmitted(true);
-    // Calculate score (mock implementation)
-    const totalQuestions = mockExamData[examKey as keyof typeof mockExamData]?.totalQuestions || 0;
-    const correctAnswers = Object.keys(answers).length;
-    const calculatedScore = Math.round((correctAnswers / totalQuestions) * 100);
-    setScore(calculatedScore);
+    setNumericInputValues(prev => ({ ...prev, [questionNumber]: value }));
+    const numericValue = parseInt(value, 10);
+    if (!isNaN(numericValue)) {
+      handleAnswerSelect(questionNumber, numericValue);
+    } else {
+      const newAnswers = { ...answers };
+      delete newAnswers[questionNumber];
+      setAnswers(newAnswers);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -90,105 +165,143 @@ export default function ExamPage() {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
-  if (isSubmitted && score !== null) {
+  // Loading and Error states (no changes needed)
+  if (isLoading) {
+     return (
+       <div className="flex items-center justify-center h-screen">
+         Loading exam data...
+       </div>
+     );
+  }
+
+  if (error && !isSubmitted) {
     return (
-      <div className="max-w-4xl mx-auto p-6 text-center">
-        <h1 className="text-3xl font-bold mb-6">Exam Completed!</h1>
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="text-6xl font-bold text-indigo-600 mb-4">{score}%</div>
-          <p className="text-gray-600 mb-6">
-            You answered {Object.keys(answers).length} out of {mockExamData[examKey as keyof typeof mockExamData]?.totalQuestions} questions
-          </p>
-          <button
-            onClick={() => router.push(`/subjects/${subject}/exams`)}
-            className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
-          >
-            Return to Exams
-          </button>
+      <div className="flex items-center justify-center h-screen">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Error!</strong>
+          <span className="block sm:inline"> {error}</span>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="flex h-screen">
-      {/* PDF Viewer */}
-      <div className="w-1/2 h-full overflow-auto bg-gray-100 p-4">
-        <div className="sticky top-0 bg-white p-4 shadow-sm mb-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">Exam Paper</h2>
-            <div className="text-red-600 font-bold">{formatTime(timeLeft)}</div>
-          </div>
-        </div>
-        <Document
-          file={mockExamData[examKey as keyof typeof mockExamData]?.pdfUrl}
-          onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-          className="bg-white p-4 rounded-lg shadow"
-        >
-          <Page pageNumber={pageNumber} />
-        </Document>
-        <div className="flex justify-center mt-4 space-x-2">
-          <button
-            onClick={() => setPageNumber((prev) => Math.max(prev - 1, 1))}
-            disabled={pageNumber <= 1}
-            className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <span className="px-4 py-2">
-            Page {pageNumber} of {numPages}
-          </span>
-          <button
-            onClick={() => setPageNumber((prev) => Math.min(prev + 1, numPages || 1))}
-            disabled={pageNumber >= (numPages || 1)}
-            className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
+  if (!currentExam) {
+    // This state should ideally be covered by the error state, but keep as fallback
+    return (
+      <div className="flex items-center justify-center h-screen">
+        Exam details could not be loaded. Key: {examKey}
       </div>
+    );
+  }
 
-      {/* Answer Sheet */}
-      <div className="w-1/2 h-full overflow-auto bg-white p-6">
-        <div className="sticky top-0 bg-white p-4 shadow-sm mb-4">
-          <h2 className="text-xl font-semibold mb-4">Answer Sheet</h2>
-          <div className="grid grid-cols-5 gap-2">
-            {Array.from({ length: mockExamData[examKey as keyof typeof mockExamData]?.totalQuestions || 0 }, (_, i) => i + 1).map(
-              (questionNumber) => (
-                <div
-                  key={questionNumber}
-                  className="border rounded-lg p-2"
-                >
-                  <div className="text-sm font-medium mb-1">Q{questionNumber}</div>
-                  <div className="grid grid-cols-4 gap-1">
-                    {['A', 'B', 'C', 'D'].map((option) => (
-                      <button
-                        key={option}
-                        onClick={() => handleAnswerSelect(questionNumber, option)}
-                        className={`p-1 text-xs rounded ${
-                          answers[questionNumber] === option
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-gray-100 hover:bg-gray-200'
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )
-            )}
+  // Results screen rendering (no changes needed, uses currentExam)
+  if (isSubmitted && score !== null) {
+    let correctCount = 0;
+    if (currentExam?.answers) {
+      for (let i = 1; i <= currentExam.totalQuestions; i++) {
+        if (answers[i] !== undefined && String(answers[i]) === String(currentExam.answers[i-1])) {
+          correctCount++;
+        }
+      }
+    }
+    return (
+      <AuthCheck>
+        <div className="max-w-4xl mx-auto p-6 text-center">
+          <h1 className="text-3xl font-bold mb-6 text-gray-700">Exam Completed!</h1>
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <h2 className="text-xl font-semibold text-gray-700 mb-2">{currentExam.name} ({currentExam.year})</h2>
+            {isSaving && <p className="text-blue-600 my-2">Saving score...</p>} 
+            {error && !isSaving && <p className="text-red-600 my-2">Error saving score: {error}</p>} {/* Show save error here */} 
+            <div className="text-6xl font-bold text-gray-700 my-4">{score}%</div>
+            <p className="text-gray-700 mb-6">
+              You got {correctCount} out of {currentExam.totalQuestions} questions correct.
+            </p>
+            <button
+              onClick={() => router.push(`/subjects/${subject}/exams`)}
+              className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Return to Exams List
+            </button>
           </div>
         </div>
-        <div className="mt-4">
-          <button
-            onClick={handleSubmit}
-            className="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition-colors"
-          >
-            Submit Exam
-          </button>
+      </AuthCheck>
+    );
+  }
+
+  // Main Exam UI rendering (no changes needed, uses currentExam)
+  return (
+    <AuthCheck>
+      <div className="flex h-screen">
+        {/* PDF Viewer */}
+        <div className="w-1/2 h-full overflow-auto bg-gray-100 p-4">
+          <div className="sticky top-0 bg-white p-4 shadow-sm mb-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-700">{currentExam.name} ({currentExam.year})</h2>
+              <div className="text-red-600 font-bold">{formatTime(timeLeft)}</div>
+            </div>
+          </div>
+          <PDFViewer pdfPath={currentExam.pdfUrl} />
+        </div>
+
+        {/* Answer Sheet */}
+        <div className="w-1/2 h-full overflow-auto bg-white p-6 border-l">
+          <div className="sticky top-0 bg-white p-4 shadow-sm mb-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">Answer Sheet</h2>
+            <div className={`grid ${currentExam.totalQuestions > 40 ? 'grid-cols-5' : currentExam.totalQuestions > 20 ? 'grid-cols-4' : 'grid-cols-3'} gap-3`}>
+              {Array.from({ length: currentExam.totalQuestions }, (_, i) => i + 1).map(
+                (questionNumber) => (
+                  <div
+                    key={questionNumber}
+                    className="border rounded-lg p-3"
+                  >
+                    <div className="text-sm font-medium mb-2 text-center text-gray-700">Q{questionNumber}</div>
+                    {currentExam.answerFormat === 'mcq' ? (
+                      <div className={`grid ${currentExam.options?.length === 5 ? 'grid-cols-5' : currentExam.options?.length === 4 ? 'grid-cols-2' : 'grid-cols-1'} gap-1`}>
+                        {(currentExam.options || []).map((option) => (
+                          <button
+                            key={option}
+                            onClick={() => handleAnswerSelect(questionNumber, option)}
+                            disabled={isSubmitted} // Disable buttons after submission
+                            className={`p-2 text-sm rounded-md ${
+                              answers[questionNumber] === option
+                                ? 'bg-indigo-600 text-white font-medium'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            } ${isSubmitted ? 'opacity-70 cursor-not-allowed' : ''}`}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <input
+                        type="number"
+                        min="0"
+                        max="999"
+                        value={numericInputValues[questionNumber] || ''}
+                        onChange={(e) => handleNumericInputChange(questionNumber, e.target.value)}
+                        disabled={isSubmitted} // Disable input after submission
+                        className={`w-full border border-gray-300 rounded-md p-2 text-center text-sm focus:ring-indigo-500 focus:border-indigo-500 ${isSubmitted ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        placeholder="0-999"
+                      />
+                    )}
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+          <div className="mt-4 sticky bottom-0 bg-white py-4">
+            <button
+              onClick={() => handleSubmit(false)} // Pass false for manual submit
+              disabled={isSaving || isSubmitted}
+              className={`w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition-colors ${
+                (isSaving || isSubmitted) ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isSaving ? 'Submitting...' : 'Submit Exam'}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </AuthCheck>
   );
 } 
